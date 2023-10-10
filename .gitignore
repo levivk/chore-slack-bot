@@ -4,4 +4,4 @@ test_pictures/
 stubs/
 __pycache__
 keys.sourceme
-env.list
+keys.env
