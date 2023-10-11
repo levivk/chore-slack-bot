@@ -17,7 +17,8 @@ class AdminLogHandler(logging.Handler):
         admins = tuple(u for u in user_table if UserRole.ADMIN in u.roles)
         for a in admins:
             try:
-                self.wc.chat_postMessage(channel=a.slack_id, msg=self.format(record))
+                self.wc.chat_postMessage(channel=a.slack_id, text=self.format(record))
             except Exception:
+                print("failed to log to slack.")
                 # nothing we can do
                 pass

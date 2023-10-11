@@ -28,9 +28,10 @@ def remind_choredoers() -> None:
         disp_name = sh.get_user_display_name(u.slack_id)
         msg = f'Hello {disp_name}! This is a reminder to complete your chore by 10 PM today.'
         try:
-            sh.msg_user(u.name, msg)
-        except Exception:
+            sh.msg_user(u.slack_id, msg)
+        except Exception as e:
             logger.error(f'Failed to remind {u.name} to do their chore!')
+            logger.error(e)
 
 def run_reminders() -> None:
 

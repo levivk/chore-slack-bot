@@ -108,16 +108,21 @@ class PersistentTable(Generic[TR]):
                 self.load(csvfile)
 
     def load(self, csvfile: Iterable[str]) -> None:
-        self.items.clear()
-        print('loading csv')
-        try:
-            reader = csv.DictReader(csvfile)
-            # convert each row to a table row
-            for row in reader:
-                print(f'row: {row}')
-                self.append(self.row_type.from_dict(row))
-        except Exception as e:
-            raise ValueError(f"Data file {self.filename} not formatted correctly or something: {e}")
+        # Get lock while modifying self
+        with self.get_lock():
+            self.items.clear()
+            try:
+                reader = csv.DictReader(csvfile)
+                # convert each row to a table row
+                for row in reader:
+                    trow = self.row_type.from_dict(row)
+                    trow.set_parent_table(self)
+                    self.items.append(trow)
+                    # No need to sync while loading
+            except Exception as e:
+                raise ValueError(
+                    f"Data file {self.filename} not formatted correctly or something: {e}"
+                )
 
     def sync(self) -> None:
         """
@@ -220,8 +225,8 @@ class UserTable(PersistentTable[User]):
         client = WebClient(token=config.get_slack_bot_token())
         resp = client.users_list()
         try:
-            members: list[dict[str,Any]] = resp.get("members", [])
-            if members == {}: 
+            members: list[dict[str, Any]] = resp.get("members", [])
+            if members == {}:
                 raise ValueError
         except ValueError:
             logger.error("Error retrieving slack user list!")
@@ -251,7 +256,6 @@ class UserTable(PersistentTable[User]):
                 return u
         return None
 
-
         # self.append(User())
 
 
@@ -260,33 +264,36 @@ class KitchenAssignment(TableRow):
     """
     A KitchenAssignment has a name, date, and swap_date
     """
+
     name: str
     date: int
     swap_date: Optional[datetime.date]
 
     @classmethod
     def from_dict(cls, member_dict: dict[str, str]) -> Self:
-        name = member_dict['name']
-        date = int(member_dict['date'])
-        swap_text = member_dict['swap_date']
-        if swap_text == '':
+        name = member_dict["name"]
+        date = int(member_dict["date"])
+        swap_text = member_dict["swap_date"]
+        if swap_text == "":
             swap_date = None
         else:
             try:
-                swap_date = datetime.datetime.strptime(member_dict['swap_date'], '%Y/%m/%d')
+                swap_dt = datetime.datetime.strptime(member_dict["swap_date"], "%Y/%m/%d")
+                swap_date = datetime.date(swap_dt.year, swap_dt.month, swap_dt.day)
             except ValueError:
                 logger.error(
-                    f"Could not parse swap date {swap_text} in kitchen assignment for {name}")
+                    f"Could not parse swap date {swap_text} in kitchen assignment for {name}"
+                )
                 swap_date = None
         return cls(name=name, date=date, swap_date=swap_date)
 
     def as_dict(self) -> dict[str, str]:
         d = {k.name: getattr(self, k.name) for k in fields(self)}
-        d['date'] = str(self.date)
+        d["date"] = str(self.date)
         if self.swap_date is None:
-            d['swap_date'] = ''
+            d["swap_date"] = ""
         else:
-            d['swap_date'] = self.swap_date.strftime('%Y/%m/%d')
+            d["swap_date"] = self.swap_date.strftime("%Y/%m/%d")
 
         return d
 
@@ -315,7 +322,7 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
         # No kitchen cleaner today
         return None
 
-
+# TODO: These are run before logging is set up in main
 user_table = UserTable(SLACK_USER_FILE)
 kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
 
@@ -343,7 +350,6 @@ def test() -> None:
 
 
 def test2() -> None:
-
     # Test Kitchen assignent table
     k = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
     print(k)
