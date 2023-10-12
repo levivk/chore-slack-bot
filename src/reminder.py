@@ -2,7 +2,7 @@
 # import os
 from storage import user_table, UserRole, kitchen_assignment_table, KitchenAssignment
 import slack_helpers as sh
-from datetime import datetime
+import datetime
 import logging
 logger = logging.getLogger(__name__)
 
@@ -22,8 +22,14 @@ def remind_kitchen_cleaner(assignment: KitchenAssignment) -> None:
 
 
 def remind_choredoers() -> None:
-    choredoers = tuple(u for u in user_table if UserRole.CHOREDOER in u.roles)
+    choredoers = (u for u in user_table if UserRole.CHOREDOER in u.roles)
     for u in choredoers:
+        # if it is a manager and not the last day of the month, continue
+        today = datetime.date.today()
+        next_week = today + datetime.timedelta(7)
+        if UserRole.MANAGER in u.roles and today.month == next_week.month:
+            continue
+
         logger.info(f'Reminding {u.name} to do their chore')
         disp_name = sh.get_user_display_name(u.slack_id)
         msg = f'Hello {disp_name}! This is a reminder to complete your chore by 10 PM today.'
@@ -35,7 +41,8 @@ def remind_choredoers() -> None:
 
 def run_reminders() -> None:
 
-    day_of_month = datetime.today().day
+    today = datetime.datetime.today()
+    day_of_month = today.day
 
     # Get the assigned kitchen cleaner for today, if any
     kitchen_assignment = kitchen_assignment_table.get_assignment_by_date(day_of_month)
@@ -45,9 +52,11 @@ def run_reminders() -> None:
         remind_kitchen_cleaner(kitchen_assignment)
 
     # If it is chore day, send reminder to all choredoers
-    day_of_week = datetime.today().weekday()
+    day_of_week = today.weekday()
     if day_of_week == CHORE_DAY:
         remind_choredoers()
+
+
 
 if __name__ == '__main__':
     run_reminders()
