@@ -1,0 +1,117 @@
+{
+	"blocks": [
+		{
+			"type": "section",
+			"text": {
+				"type": "plain_text",
+				"text": "Hello {name}, what would you like to do?",
+				"emoji": true
+			}
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Set chore board name order",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "name-order"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Give grace on weekly chore",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "grace-weekly-chore"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Give grace on kitchen cleaning",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "grace-kitchen-cleaning"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Chore date override",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "chore-override"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Kitchen cleaning date override",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "kitchen-cleaning-override"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Get CSV",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "get-csv"
+				}
+			]
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Set CSV",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "set-csv"
+				}
+			]
+		}
+	]
+}

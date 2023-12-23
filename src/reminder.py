@@ -1,24 +1,27 @@
-
 # import os
 from storage import user_table, UserRole, kitchen_assignment_table, KitchenAssignment
 import slack_helpers as sh
 import datetime
+import schedule
+import time
 import logging
+
 logger = logging.getLogger(__name__)
 
 
 # Per datetime documentation, Monday is 0 and Sunday is 6
-CHORE_DAY = 5   # Saturday
+CHORE_DAY = 5  # Saturday
+REMINDER_TIME = "18:00"
 
 
 def remind_kitchen_cleaner(assignment: KitchenAssignment) -> None:
     assignee = user_table.get_user_by_name(assignment.name)
     if assignee is None:
-        logger.error(f'No user corresponding to kitchen cleaning assignment: {assignment}')
+        logger.error(f"No user corresponding to kitchen cleaning assignment: {assignment}")
         return
-    logger.info(f'Reminding {assignee.name} to clean the kitchen today')
+    logger.info(f"Reminding {assignee.name} to clean the kitchen today")
     disp_name = sh.get_user_display_name(assignee.slack_id)
-    sh.msg_user(assignee.slack_id, f'Hello {disp_name}! Today is your day to clean the kitchen.')
+    sh.msg_user(assignee.slack_id, f"Hello {disp_name}! Today is your day to clean the kitchen.")
 
 
 def remind_choredoers() -> None:
@@ -30,17 +33,17 @@ def remind_choredoers() -> None:
         if UserRole.MANAGER in u.roles and today.month == next_week.month:
             continue
 
-        logger.info(f'Reminding {u.name} to do their chore')
+        logger.info(f"Reminding {u.name} to do their chore")
         disp_name = sh.get_user_display_name(u.slack_id)
-        msg = f'Hello {disp_name}! This is a reminder to complete your chore by 10 PM today.'
+        msg = f"Hello {disp_name}! This is a reminder to complete your chore by 10 PM today."
         try:
             sh.msg_user(u.slack_id, msg)
         except Exception as e:
-            logger.error(f'Failed to remind {u.name} to do their chore!')
+            logger.error(f"Failed to remind {u.name} to do their chore!")
             logger.error(e)
 
-def run_reminders() -> None:
 
+def run_reminders() -> None:
     today = datetime.datetime.today()
     day_of_month = today.day
 
@@ -57,6 +60,16 @@ def run_reminders() -> None:
         remind_choredoers()
 
 
+def reminder_thread() -> None:
+    # Set up reminders
+    logger.info(f"Current time is: {datetime.datetime.today()}")
+    schedule.every().day.at(REMINDER_TIME).do(run_reminders)
+    logger.info(f"Running reminders every day at {REMINDER_TIME}")
 
-if __name__ == '__main__':
+    while True:
+        schedule.run_pending()
+        time.sleep(1)
+
+
+if __name__ == "__main__":
     run_reminders()

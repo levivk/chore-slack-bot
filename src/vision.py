@@ -222,8 +222,6 @@ class PhotoProcessor():
         M = cv.getPerspectiveTransform(src, dst)
         img_scale = cv.warpPerspective(img, M, dsize=(SCALE_WIDTH, SCALE_HEIGHT))
 
-        #TODO: save images in process or on failure
-
         # Detect button orientation by looking in a specific rectangle and checking color
         left_buttons = np.zeros(NUMBER_BUTTONS)
         right_buttons = np.zeros(NUMBER_BUTTONS)

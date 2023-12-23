@@ -1,13 +1,10 @@
-from reminder import run_reminders
+from reminder import reminder_thread
+from slack_receive import start_server
 from admin_log import AdminLogHandler
-import schedule
-import time
-from datetime import datetime
 import logging
 import signal
+from threading import Thread
 from typing import Any
-
-REMINDER_TIME = '18:00'
 
 def main() -> None:
 
@@ -25,16 +22,15 @@ def main() -> None:
     sh.setFormatter(sh_fmtr)
 
     logging.basicConfig(level=logging.INFO, handlers=[sh, al])
-    logger = logging.getLogger(__name__)
 
-    # Set up reminders
-    logger.info(f'Current time is: {datetime.today()}')
-    schedule.every().day.at(REMINDER_TIME).do(run_reminders)
-    logger.info(f'Running reminders every day at {REMINDER_TIME}')
+    # start reminder thread
+    t = Thread(target=reminder_thread, daemon=True)
+    t.start()
 
-    while True:
-        schedule.run_pending()
-        time.sleep(1)
+    # start slack server
+    start_server()
+    
+
 
 if __name__ == '__main__':
     try:
