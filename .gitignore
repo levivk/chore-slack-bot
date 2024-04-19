@@ -2,6 +2,7 @@
 !.gitignore
 test_pictures/
 stubs/
+venv/
 __pycache__
 keys.sourceme
 keys.env
