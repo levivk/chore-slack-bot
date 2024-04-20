@@ -226,7 +226,7 @@ class UserTable(PersistentTable[User]):
         resp = client.users_list()
         try:
             members: list[dict[str, Any]] = resp.get("members", [])
-            if members == {}:
+            if members == []:
                 raise ValueError
         except ValueError:
             logger.error("Error retrieving slack user list!")
@@ -250,11 +250,11 @@ class UserTable(PersistentTable[User]):
                 User(name=real_name, slack_id=uid, roles=UserRole.RESIDENT | UserRole.CHOREDOER)
             )
 
-    def get_user_by_name(self, name: str) -> Optional[User]:
+    def get_user_by_name(self, name: str) -> User:
         for u in self:
             if u.name == name:
                 return u
-        return None
+        raise ValueError
 
         # self.append(User())
 
@@ -305,6 +305,8 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
 
     def __init__(self, filename: str | Path, create_new: bool = False):
         super().__init__(filename, KitchenAssignment, create_new)
+        # Ensure sorted
+        self.items.sort(key=lambda i: i.date)
 
     def get_assignment_by_date(self, date: int) -> Optional[KitchenAssignment]:
         # target date this month

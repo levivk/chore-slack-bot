@@ -1,5 +1,6 @@
 import config
 from vision import PhotoProcessor
+from storage import kitchen_assignment_table, user_table, UserRole, User
 from slack_bolt import App
 from slack_bolt.context.say.say import Say
 from slack_sdk import WebClient
@@ -44,8 +45,31 @@ def handle_picture(url: str, say: Say) -> None:
     img_data = requests.get(url, headers=header).content
     # process picture
     phop = PhotoProcessor(img_data)
+    left_buttons = phop.get_left_buttons()
     right_buttons = phop.get_right_buttons()
-    say(str(right_buttons))
+    kitchen_complete_names = [kitchen_assignment_table[i].name for i in left_buttons]
+    chore_complete_names = [kitchen_assignment_table[i].name for i in right_buttons]
+    text = "Kitchen completed by " + ",".join(kitchen_complete_names) + "\n"
+    text += "Chore completed by " + ",".join(chore_complete_names) + "\n"
+    say(text)
+
+    chore_missers: list[User] = []
+    for i, ka in enumerate(kitchen_assignment_table):
+        chore_complete = i in right_buttons
+        user = user_table.get_user_by_name(ka.name)
+        user_roles = user.roles
+        is_manager = UserRole.MANAGER in user_roles
+        is_choredoer = UserRole.CHOREDOER in user_roles
+
+        # TODO: check date to see what chore status should be
+        # Record status in table
+        # Send reminder to incompletes
+        # Refactor this to be in another file
+        if is_choredoer and not chore_complete and not is_manager:
+            chore_missers.append(user)
+        
+    say("chore missers: \n" + "\n".join([u.name for u in chore_missers]))
+
 
     #   recieve picture, process picture
     #   ask user whether they would like to remind/scold/mark for fines based on time
