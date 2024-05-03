@@ -3,7 +3,8 @@ import enum
 from dataclasses import dataclass, fields
 import datetime
 from slack_sdk import WebClient
-from typing import Any, Self, Iterable, Iterator, TypeVar, Generic, Optional
+from typing import Any, Iterable, Iterator, TypeVar, Generic, Optional
+from typing_extensions import Self
 from abc import ABC, abstractmethod
 from threading import Lock
 import os
@@ -17,7 +18,9 @@ logger = logging.getLogger(__name__)
 
 
 SLACK_USER_FILE = (Path(__file__).parent / "../data/users.csv").resolve()
-KITCHEN_ASSIGNMENT_FILE = (Path(__file__).parent / "../data/kitchen_assignments.csv").resolve()
+KITCHEN_ASSIGNMENT_FILE = (Path(__file__).parent 
+    / "../data/kitchen_assignments.csv").resolve()
+CHORE_COMP_FILE = (Path(__file__).parent / "../data/chore_comp.csv").resolve()
 
 
 @dataclass
@@ -324,11 +327,147 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
         # No kitchen cleaner today
         return None
 
+class ChoreCompletionFlag(enum.Flag):
+    COMPLETE_ON_TIME = enum.auto()
+    LATE_PENDING = enum.auto()
+    COMPLETE_LATE = enum.auto()
+    DID_NOT_COMPLETE = enum.auto()
+    MANUALLY_CORRECTED = enum.auto()
+    OUT_OF_HOUSE = enum.auto()
+
+class ChoreCompletion(TableRow):
+    """
+    Chore completion by person for a specific week
+    """
+
+    # TODO: date
+    date: datetime.date
+    # Mapping of names to completion flag
+    completion: dict[str, ChoreCompletionFlag]
+
+    def __init__(self, date: datetime.date, comp_dict: dict[str, ChoreCompletionFlag]):
+        self.date = date
+        self.completion = comp_dict
+
+    def __getitem__(self, key: str) -> ChoreCompletionFlag:
+        return self.completion[key]
+
+    def __setitem__(self, key: str, value: ChoreCompletionFlag) -> None:
+        with self.get_lock():
+            self.completion[key] = value
+            self.sync()
+
+    def names(self) -> list[str]:
+        return list(self.completion.keys())
+
+    @classmethod
+    def from_dict(cls, member_dict: dict[str, str]) -> Self:
+        """
+        Convert from a dict maping names and text representation of flags to
+        mapping names to the actual flag type
+        """
+        new_dict: dict[str, ChoreCompletionFlag] = dict()
+        for column, value in member_dict.items():
+            # Check for special date column
+            if column == "date":
+                try:
+                    dt = datetime.datetime.strptime(value, "%Y/%m/%d")
+                    date = datetime.date(dt.year, dt.month, dt.day)
+                except ValueError:
+                    logger.error(f"Could not parse date {dt} in chore completion table")
+                    date = datetime.date(1990, 1, 1)
+                continue
+
+            flag = ChoreCompletionFlag(0)
+            # for each flag in the text
+            for f in value.split("|"):
+                if f == "" or f.isspace():
+                    continue
+                try:
+                    flag |= ChoreCompletionFlag[f.upper()]
+                except KeyError:
+                    logger.error(f"Invalid flag in completion file: {f}")
+                    continue
+            # Put name, flag in new dict
+            new_dict[column] = flag
+
+        return cls(date, new_dict)
+
+    def as_dict(self) -> dict[str, str]:
+        """
+        Return dict mapping names to text representation of flags
+        """
+        d: dict[str, str] = dict()
+
+        d["date"] = self.date.strftime("%Y/%m/%d")
+
+        # Loop through dict and convert to strings
+        for name, flag in self.completion.items():
+            role_text = "|".join(f.name for f in flag if f.name is not None)
+            d[name] = role_text
+
+        return d
+
+
+class ChoreCompletionTable(PersistentTable[ChoreCompletion]):
+    """
+    A table to record chore completion
+    """
+
+    names: list[str] = list()
+
+    def __init__(self, filename: str | Path, names: list[str], create_new: bool = False):
+        super().__init__(filename, ChoreCompletion, create_new)
+        
+        # populate cur_names with names loaded from csv if any
+        try:
+            cur_names = self[0].names()
+        except (KeyError, IndexError):
+            cur_names = []
+
+        self._ensure_names(cur_names, names)
+
+    def _ensure_names(self, cur_names: list[str], all_names: list[str]) -> None:
+        """
+        Add names to table if they do not exist
+        """
+        new_names = [n for n in all_names if n not in cur_names]
+        self.names = cur_names + new_names
+        for n in new_names:
+            for row in self:
+                # Set in row member dict directly to avoid multiple syncs
+                # We are in __init__ no need to lock
+                row.completion[n] = ChoreCompletionFlag(0)
+        if new_names:
+            self.fieldnames = self.names + ["date"]
+            self.sync()
+
+        self.names = cur_names + new_names
+
+
 # TODO: These are run before logging is set up in main
-user_table = UserTable(SLACK_USER_FILE)
-kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
+# user_table = UserTable(SLACK_USER_FILE)
+# kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
+
+user_table: UserTable
+kitchen_assignment_table: KitchenAssignmentTable
+chore_completion_table: ChoreCompletionTable
+
+def init_storage_classes() -> None:
+    global user_table
+    global kitchen_assignment_table
+    global chore_completion_table
+
+    # todo allow dybancu 
+    # I forget what the above means
+
+    user_table = UserTable(SLACK_USER_FILE)
+    names = [u.name for u in user_table]
+    kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
+    chore_completion_table = ChoreCompletionTable(CHORE_COMP_FILE, names)
 
 
+# TODO rewrite tests to call init_storage classes first
 def test() -> None:
     # Make a user table
     t = UserTable("test.csv", create_new=True)
@@ -359,5 +498,29 @@ def test2() -> None:
         print(kr)
 
 
+def test3() -> None:
+    names = ["foo", "bar", "baz"]
+
+    chore_completion_table = ChoreCompletionTable(
+        CHORE_COMP_FILE, names, create_new=True)
+
+    row1 = ChoreCompletion(datetime.date(1999, 2, 3), 
+        {"foo": ChoreCompletionFlag(2), "bar": ChoreCompletionFlag(1)})
+
+    chore_completion_table.append(row1)
+
+    n2 = ["foo", "baz", "boo"]
+    cct2 = ChoreCompletionTable(CHORE_COMP_FILE, n2)
+    row2 = ChoreCompletion(
+        datetime.date(2001, 4, 4),
+       {"foo": ChoreCompletionFlag.COMPLETE_LATE 
+            | ChoreCompletionFlag.MANUALLY_CORRECTED, 
+        "boo": ChoreCompletionFlag.DID_NOT_COMPLETE})
+    cct2.append(row2)
+
+
+    print("created csvs")
+
+
 if __name__ == "__main__":
-    test2()
+    test3()
