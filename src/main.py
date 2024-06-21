@@ -1,5 +1,6 @@
 from reminder import reminder_thread
 from slack_receive import start_server
+from storage import init_storage
 from admin_log import AdminLogHandler
 import logging
 import signal
@@ -13,6 +14,9 @@ def main() -> None:
         raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, sigterm_handler)
 
+    # TODO: init stream logging before this?
+    init_storage()
+
     # Set up logging
     al = AdminLogHandler()
     al_fmtr = logging.Formatter('{levelname:<4.4}: {message}', style='{')
@@ -22,6 +26,7 @@ def main() -> None:
     sh.setFormatter(sh_fmtr)
 
     logging.basicConfig(level=logging.INFO, handlers=[sh, al])
+
 
     # start reminder thread
     t = Thread(target=reminder_thread, daemon=True)

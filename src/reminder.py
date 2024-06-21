@@ -1,6 +1,6 @@
 # import os
-from storage import user_table, UserRole, kitchen_assignment_table, KitchenAssignment
-import slack_helpers as sh
+import storage as st
+import slack_send as ss
 import datetime
 import schedule
 import time
@@ -14,30 +14,33 @@ CHORE_DAY = 5  # Saturday
 REMINDER_TIME = "18:00"
 
 
-def remind_kitchen_cleaner(assignment: KitchenAssignment) -> None:
-    assignee = user_table.get_user_by_name(assignment.name)
+def remind_kitchen_cleaner(assignment: st.KitchenAssignment) -> None:
+    ut = st.get_user_table()
+    assignee = ut.get_user_by_name(assignment.name)
     if assignee is None:
         logger.error(f"No user corresponding to kitchen cleaning assignment: {assignment}")
         return
     logger.info(f"Reminding {assignee.name} to clean the kitchen today")
-    disp_name = sh.get_user_display_name(assignee.slack_id)
-    sh.msg_user(assignee.slack_id, f"Hello {disp_name}! Today is your day to clean the kitchen.")
+    disp_name = ss.get_user_display_name(assignee.slack_id)
+    ss.msg_user(assignee.slack_id, f"Hello {disp_name}! Today is your day to clean the kitchen.",
+                ignore_test_mode=True)
 
 
 def remind_choredoers() -> None:
-    choredoers = (u for u in user_table if UserRole.CHOREDOER in u.roles)
+    ut = st.get_user_table()
+    choredoers = (u for u in ut if st.UserRole.CHOREDOER in u.roles)
     for u in choredoers:
         # if it is a manager and not the last day of the month, continue
         today = datetime.date.today()
         next_week = today + datetime.timedelta(7)
-        if UserRole.MANAGER in u.roles and today.month == next_week.month:
+        if st.UserRole.MANAGER in u.roles and today.month == next_week.month:
             continue
 
         logger.info(f"Reminding {u.name} to do their chore")
-        disp_name = sh.get_user_display_name(u.slack_id)
+        disp_name = ss.get_user_display_name(u.slack_id)
         msg = f"Hello {disp_name}! This is a reminder to complete your chore by 10 PM today."
         try:
-            sh.msg_user(u.slack_id, msg)
+            ss.msg_user(u.slack_id, msg, ignore_test_mode=True)
         except Exception as e:
             logger.error(f"Failed to remind {u.name} to do their chore!")
             logger.error(e)
@@ -48,7 +51,8 @@ def run_reminders() -> None:
     day_of_month = today.day
 
     # Get the assigned kitchen cleaner for today, if any
-    kitchen_assignment = kitchen_assignment_table.get_assignment_by_date(day_of_month)
+    kat = st.get_kitchen_assignment_table()
+    kitchen_assignment = kat.get_assignment_by_date(day_of_month)
 
     if kitchen_assignment is not None:
         # Send them a reminder

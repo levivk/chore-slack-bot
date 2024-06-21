@@ -173,6 +173,7 @@ class PersistentTable(Generic[TR]):
         return self.lock
 
 
+# TODO: Add role for monthly manager chore
 class UserRole(enum.Flag):
     ADMIN = enum.auto()
     MANAGER = enum.auto()
@@ -180,6 +181,7 @@ class UserRole(enum.Flag):
     CHOREDOER = enum.auto()
 
 
+# TODO: remove name and make id the primary key
 @dataclass(slots=True)
 class User(TableRow):
     """
@@ -253,6 +255,7 @@ class UserTable(PersistentTable[User]):
                 User(name=real_name, slack_id=uid, roles=UserRole.RESIDENT | UserRole.CHOREDOER)
             )
 
+    # TODO: create hash table at init
     def get_user_by_name(self, name: str) -> User:
         for u in self:
             if u.name == name:
@@ -260,6 +263,12 @@ class UserTable(PersistentTable[User]):
         raise ValueError
 
         # self.append(User())
+
+    def get_user_by_slack_id(self, id: str) -> User:
+        for u in self:
+            if u.slack_id == id:
+                return u
+        raise ValueError
 
 
 @dataclass(slots=True)
@@ -449,24 +458,35 @@ class ChoreCompletionTable(PersistentTable[ChoreCompletion]):
 # user_table = UserTable(SLACK_USER_FILE)
 # kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
 
-user_table: UserTable
-kitchen_assignment_table: KitchenAssignmentTable
-chore_completion_table: ChoreCompletionTable
+_user_table: UserTable | None = None
+_kitchen_assignment_table: KitchenAssignmentTable | None = None
+_chore_completion_table: ChoreCompletionTable | None = None
 
-def init_storage_classes() -> None:
-    global user_table
-    global kitchen_assignment_table
-    global chore_completion_table
+def init_storage() -> None:
+    global _user_table
+    global _kitchen_assignment_table
+    global _chore_completion_table
 
-    # todo allow dybancu 
-    # I forget what the above means
+    _user_table = UserTable(SLACK_USER_FILE)
+    names = [u.name for u in _user_table]
+    _kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
+    _chore_completion_table = ChoreCompletionTable(CHORE_COMP_FILE, names)
 
-    user_table = UserTable(SLACK_USER_FILE)
-    names = [u.name for u in user_table]
-    kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
-    chore_completion_table = ChoreCompletionTable(CHORE_COMP_FILE, names)
+def get_user_table() -> UserTable:
+    if not _user_table:
+        raise ValueError("Storage not initialized!")
+    return _user_table
 
+def get_kitchen_assignment_table() -> KitchenAssignmentTable:
+    if not _kitchen_assignment_table:
+        raise ValueError("Storage not initialized!")
+    return _kitchen_assignment_table
 
+def get_chore_completion_table() -> ChoreCompletionTable:
+    if not _chore_completion_table:
+        raise ValueError("Storage not initialized!")
+    return _chore_completion_table
+                         
 # TODO rewrite tests to call init_storage classes first
 def test() -> None:
     # Make a user table
