@@ -24,6 +24,8 @@ def get_user_display_name(slack_id: str) -> str:
     except SlackApiError as e:
         _logger.error(f'Error getting user display name: {str(e)}')
         return 'idk name'
+
+    # _logger.info(response)
     
     try:
         user: dict[str, Any] = response.get('user', {})
@@ -39,10 +41,29 @@ def get_user_display_name(slack_id: str) -> str:
         _logger.error('Invalid response to slack user info request')
         return 'idk name'
 
-    return disp_name
+    if disp_name:
+        return disp_name
 
-def msg_user(slack_id: str, msg: str, ignore_test_mode:bool = False) -> None:
-    _logger.info(f"id: {slack_id} name: {get_user_display_name(slack_id)} msg: {msg}")
+    # display_name is empty
+    try:
+        disp_name = user['profile']['real_name']
+    except KeyError:
+        _logger.error('Invalid response to slack user info request')
+        return 'idk name'
+
+    if disp_name:
+        return disp_name
+
+    _logger.error("Could not find display name for user: " + slack_id)
+    return 'idk name'
+
+def msg_user(slack_id: str, msg: str, ignore_test_mode:bool = False) -> bool:
+    _logger.info(f"Messaging user: {get_user_display_name(slack_id)} msg: \"{msg}\"")
 
     if (not _test_mode) or ignore_test_mode:
         _client.chat_postMessage(channel=slack_id, text=msg)
+        return True
+    else:
+        _logger.info("Test mode enabled, message not sent!")
+        return False
+
