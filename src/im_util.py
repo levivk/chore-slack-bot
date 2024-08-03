@@ -43,7 +43,7 @@ def cmd_testmode(args: list[str]) -> str:
 
 
 def cmd_user(args: list[str]) -> str:
-    help_text = "user {list}"
+    help_text = "user {list | update}"
 
     if not args:
         return help_text
@@ -55,6 +55,9 @@ def cmd_user(args: list[str]) -> str:
         for i,u in enumerate(get_user_table()):
             ret += f"{i}: {u.name}\n"
         return ret
+    elif arg == "update":
+        get_user_table().update_from_slack()
+        return "User list updated"
     else:
         return help_text
 

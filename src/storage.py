@@ -224,9 +224,9 @@ class UserTable(PersistentTable[User]):
 
     def __init__(self, filename: str | Path, create_new: bool = False):
         super().__init__(filename, User, create_new)
-        self._update_from_slack()
+        self.update_from_slack()
 
-    def _update_from_slack(self) -> None:
+    def update_from_slack(self) -> None:
         client = WebClient(token=config.get_slack_bot_token())
         resp = client.users_list()
         try:
