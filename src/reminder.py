@@ -16,13 +16,13 @@ REMINDER_TIME = "18:00"
 
 def remind_kitchen_cleaner(assignment: st.KitchenAssignment) -> None:
     ut = st.get_user_table()
-    assignee = ut.get_user_by_name(assignment.name)
+    assignee = ut[assignment.id]
     if assignee is None:
         logger.error(f"No user corresponding to kitchen cleaning assignment: {assignment}")
         return
     logger.info(f"Reminding {assignee.name} to clean the kitchen today")
-    disp_name = ss.get_user_display_name(assignee.slack_id)
-    ss.msg_user(assignee.slack_id, f"Hello {disp_name}! Today is your day to clean the kitchen.",
+    disp_name = ss.get_user_display_name(assignee.id)
+    ss.msg_user(assignee.id, f"Hello {disp_name}! Today is your day to clean the kitchen.",
                 ignore_test_mode=True)
 
 
@@ -37,10 +37,10 @@ def remind_choredoers() -> None:
             continue
 
         logger.info(f"Reminding {u.name} to do their chore")
-        disp_name = ss.get_user_display_name(u.slack_id)
+        disp_name = ss.get_user_display_name(u.id)
         msg = f"Hello {disp_name}! This is a reminder to complete your chore by 10 PM today."
         try:
-            ss.msg_user(u.slack_id, msg, ignore_test_mode=True)
+            ss.msg_user(u.id, msg, ignore_test_mode=True)
         except Exception as e:
             logger.error(f"Failed to remind {u.name} to do their chore!")
             logger.error(e)

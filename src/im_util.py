@@ -7,7 +7,7 @@ from typing import Callable
 
 def handle_command(command_text: str, say: Say) -> None:
     command_map: dict[str, Callable[[list[str]], str]] = {
-        'testmode' : cmd_testmode,
+        'testmode': cmd_testmode,
         'user': cmd_user,
         'msg': cmd_msg,
     }
@@ -29,7 +29,7 @@ def cmd_testmode(args: list[str]) -> str:
 
     if not args:
         return "Test mode is " + ("ON" if ss.get_test_mode() else "OFF")
-    
+
     mode = args[0].lower()
 
     if mode == "on":
@@ -52,8 +52,8 @@ def cmd_user(args: list[str]) -> str:
 
     if arg == "list":
         ret = ""
-        for i,u in enumerate(get_user_table()):
-            ret += f"{i}: {u.name}\n"
+        for i, u in enumerate(get_user_table()):
+            ret += f"{i}: {u.name} {u.roles}\n"
         return ret
     elif arg == "update":
         get_user_table().update_from_slack()
@@ -61,7 +61,22 @@ def cmd_user(args: list[str]) -> str:
     else:
         return help_text
 
+
+# def cmd_user_get(args: list[str]) -> str:
+#     help_text = "user get [name]"
+#
+#     if not args:
+#         # print all users
+#         ret = ""
+#         for i, u in enumerate(get_user_table()):
+#             ret += f"{i}: {u.name} {str(u.roles).split('.')[1]}\n"
+#         return ret
+#
+#     return ""
+
 # TODO: implement
+
+
 def cmd_msg(args: list[str]) -> str:
     help_text = "msg {user_index} {message}"
 
@@ -82,4 +97,3 @@ def cmd_msg(args: list[str]) -> str:
     message = " ".join(args[1:])
     ret = ss.msg_user(slack_id, message)
     return "Message sent" if ret else "Message not sent"
-

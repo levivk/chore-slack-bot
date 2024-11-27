@@ -7,6 +7,7 @@ import signal
 from threading import Thread
 from typing import Any
 
+
 def main() -> None:
 
     # Handle signals
@@ -27,14 +28,12 @@ def main() -> None:
 
     logging.basicConfig(level=logging.INFO, handlers=[sh, al])
 
-
     # start reminder thread
     t = Thread(target=reminder_thread, daemon=True)
     t.start()
 
     # start slack server
     start_server()
-    
 
 
 if __name__ == '__main__':

@@ -1,33 +1,27 @@
+
 import config
-import enum
-from dataclasses import dataclass, fields
-import datetime
 from slack_sdk import WebClient
-from typing import Any, Iterable, Iterator, TypeVar, Generic, Optional
-from typing_extensions import Self
-from abc import ABC, abstractmethod
-from threading import Lock
-import os
-from pathlib import Path
-import csv
-import shutil
-from io import TextIOWrapper
+import sqlite3
+import enum
+import datetime
 import logging
+from dataclasses import dataclass, fields, astuple
+from abc import ABC
+from pathlib import Path
+from typing import Any, Optional, Iterator
+from typing_extensions import Self
 
 logger = logging.getLogger(__name__)
 
-
-SLACK_USER_FILE = (Path(__file__).parent / "../data/users.csv").resolve()
-KITCHEN_ASSIGNMENT_FILE = (Path(__file__).parent 
-    / "../data/kitchen_assignments.csv").resolve()
-CHORE_COMP_FILE = (Path(__file__).parent / "../data/chore_comp.csv").resolve()
+DB_FILE_NAME = "chorebot.db"
+DB_FILE = (Path(__file__).parent / ("../data/" + DB_FILE_NAME)).resolve()
 
 
 @dataclass
 class TableRow(ABC):
     """
     Abstract class for table rows. Subclass with members for columns.
-    Modifying members will write parent table to disk.
+    Modifying members will update associated database entry.
     """
 
     __slots__ = "_parent_table"
@@ -39,138 +33,179 @@ class TableRow(ABC):
         self._parent_table: Optional["PersistentTable[Self]"] = None
 
     def __setattr__(self, name: str, value: Any) -> None:
-        # don't lock if not part of dataclass
-        if name not in [f.name for f in fields(self)]:
-            object.__setattr__(self, name, value)
-            return
-        # Get lock, set, sync table
-        with self.get_lock():
-            object.__setattr__(self, name, value)
+        object.__setattr__(self, name, value)
+
+        # if this is a dataclass member update the database
+        if name in (f.name for f in fields(self)):
             self.sync()
 
     def set_parent_table(self, parent_table: Optional["PersistentTable[Self]"]) -> None:
         self._parent_table = parent_table
 
-    def get_lock(self) -> Lock:
-        """
-        Get the Threading.Lock of the parent table. Member modification is already thread-safe.
-        """
-        if not hasattr(self, "_parent_table"):
-            # we are in TableRow initialization which means row is not yet in table
-            # and no need to lock
-            return Lock()
-        if self._parent_table is None:
-            # parent table hasn't been set, but row is initialized. Error.
-            raise ValueError("Cannot get lock. This row does not belong to a table.")
-        # Get lock from table
-        return self._parent_table.get_lock()
+    # def get_lock(self) -> Lock:
+    #     """
+    #     Get the Threading.Lock of the parent table.
+    #     """
+    #     if not hasattr(self, "_parent_table"):
+    #         # we are in TableRow initialization which means row is not yet in table
+    #         # and no need to lock
+    #         return Lock()
+    #     if self._parent_table is None:
+    #         # parent table hasn't been set, but row is initialized. Error.
+    #         raise ValueError("Cannot get lock. This row does not belong to a table.")
+    #     # Get lock from table
+    #     return self._parent_table.get_lock()
 
     def sync(self) -> None:
         """
-        Write the parent table to disk. This is done automatically on member modification.
+        Tell the parent table to update this row.
         """
+
         if not hasattr(self, "_parent_table"):
             # No table, no sync
             return
         if self._parent_table is None:
             # Initialized with no table, error
             raise ValueError("Cannot sync. This row does not belong to a table.")
-        return self._parent_table.sync()
+        return self._parent_table.update(self)
 
-    @abstractmethod
-    def as_dict(self) -> dict[str, str]:
-        raise NotImplementedError
-
-    @classmethod
-    @abstractmethod
-    def from_dict(cls, member_dict: dict[str, str]) -> Self:
-        raise NotImplementedError
-
-
-TR = TypeVar("TR", bound=TableRow)
+    # @abstractmethod
+    # def as_dict(self) -> dict[str, str | int]:
+    #     raise NotImplementedError
+    #
+    # @classmethod
+    # @abstractmethod
+    # def from_dict(cls, member_dict: dict[str, str | int]) -> Self:
+    #     raise NotImplementedError
 
 
-class PersistentTable(Generic[TR]):
+# TR = TypeVar("TR", bound=TableRow)
+
+
+class PersistentTable[TR: TableRow]:
     """
-    Table-like object with write through csv file storage
-
-    inspired by: https://code.activestate.com/recipes/576642/
+    Table-like object that interfaces to a database
     """
 
-    def __init__(self, filename: str | Path, row_type: type[TR], create_new: bool = False):
-        self.filename = filename
-        self.items: list[TR] = list()
+    def __init__(self, table_name: str, row_type: type[TR], truncate: bool = False):
+        self.table_name = table_name
         self.row_type: type[TR] = row_type
-        self.fieldnames = [f.name for f in fields(self.row_type)]
+        row_fields = fields(self.row_type)
+        self.fieldnames = tuple(f.name for f in row_fields)
 
-        # lock for thread safety
-        self.lock = Lock()
+        fieldtypes = tuple(f.type.__name__ for f in row_fields
+                           if hasattr(f.type, '__name__'))
 
-        if not create_new and os.access(filename, os.R_OK):
-            with open(filename, "r", newline="") as csvfile:
-                self.load(csvfile)
+        if len(row_fields) != len(fieldtypes):
+            raise TypeError("Table row type does not have __name__??")
 
-    def load(self, csvfile: Iterable[str]) -> None:
-        # Get lock while modifying self
-        with self.get_lock():
-            self.items.clear()
-            try:
-                reader = csv.DictReader(csvfile)
-                # convert each row to a table row
-                for row in reader:
-                    trow = self.row_type.from_dict(row)
-                    trow.set_parent_table(self)
-                    self.items.append(trow)
-                    # No need to sync while loading
-            except Exception as e:
-                raise ValueError(
-                    f"Data file {self.filename} not formatted correctly or something: {e}"
-                )
+        # print(self.fieldnames[0])
+        # print(type(self.fieldnames[0]))
+        # print(fields(self.row_type)[0].type.__name__)
+        # print(name(fields(self.row_type)[0].type))
+        # print(type(fields(self.row_type)[0].type))
 
-    def sync(self) -> None:
-        """
-        Open file and write items
-        """
-        tempname = str(self.filename) + ".tmp"
-        with open(tempname, "w", newline="") as csvfile:
-            try:
-                self.dump(csvfile)
-            except Exception:
-                os.remove(tempname)
-                raise
-            shutil.move(tempname, self.filename)  # atomic
-
-    def dump(self, csvfile: TextIOWrapper) -> None:
-        """
-        write items to file
-        """
-        writer = csv.DictWriter(csvfile, fieldnames=self.fieldnames)
-        writer.writeheader()
-        writer.writerows([r.as_dict() for r in self.items])
-
-    def __len__(self) -> int:
-        return len(self.items)
-
-    def __getitem__(self, key: int) -> TR:
-        return self.items[key]
-
-    def __str__(self) -> str:
-        return str(self.items)
-
-    def __iter__(self) -> Iterator[TR]:
-        return iter(self.items)
+        # Create table if it does not exist
+        column_str = f"{self.fieldnames[0]} {fieldtypes[0]} PRIMARY KEY, " \
+            + ", ".join(f"{n} {t}" for n, t in zip(self.fieldnames[1:], fieldtypes[1:]))
+        sql = f"CREATE TABLE IF NOT EXISTS {self.table_name}({column_str})"
+        # print(sql)
+        con = sqlite3.connect(DB_FILE)
+        # truncate table if set
+        if truncate:
+            con.execute(f"DROP TABLE IF EXISTS {self.table_name}")
+        con.execute(sql)
+        # res = con.execute(("SELECT name FROM sqlite_master",
+        #                    "WHERE type='table'",
+        #                    "AND name=?"), self.table_name)
+        # table_exists = res.fetchone() is not None
+        con.close()
 
     def append(self, row: TR) -> None:
         """
         Append a new row to the table
         """
-        row.set_parent_table(self)
-        with self.get_lock():
-            self.items.append(row)
-            self.sync()
+        if tuple(f.name for f in fields(row)) != self.fieldnames:
+            raise ValueError("Invalid row passed to append")
 
-    def get_lock(self) -> Lock:
-        return self.lock
+        row.set_parent_table(self)
+        sql = (f"INSERT INTO {self.table_name} VALUES"
+               "(" + ", ".join('?' * len(self.fieldnames)) + ")")
+        # print(sql)
+        # print(astuple(row))
+        con = sqlite3.connect(DB_FILE)
+        con.execute(sql,
+                    astuple(row))
+        con.commit()
+        con.close()
+
+    # TODO: I'd like row to use TR so that sub tables are bound to the sub row types,
+        # but mypy doesn't like that
+    def update(self, row: TableRow) -> None:
+        """
+        Replace a row with the one given if the primary key exists
+        """
+        # validate field names
+        if tuple(f.name for f in fields(row)) != self.fieldnames:
+            raise ValueError("Invalid row passed to append")
+        # check if exists by primary key (first column)
+        pk_col = self.fieldnames[0]
+        pk_val = astuple(row)[0]
+        con = sqlite3.connect(DB_FILE)
+        res = con.execute((f"SELECT {pk_col} FROM {self.table_name} WHERE {pk_col} = ?"),
+                          (pk_val,))
+        if res.fetchone() is None:
+            con.close()
+            raise ValueError("Attempt to update row that does not exist")
+
+        # Row exists with this primary key. Replace it.
+        sql = f"REPLACE INTO {self.table_name} VALUES(" \
+            + ", ".join('?' * len(self.fieldnames)) + ")"
+        con.execute(sql, astuple(row))
+        con.commit()
+        con.close()
+
+    # TODO: fix the "Any" here
+    def keys(self) -> tuple[Any]:
+        pk_col = self.fieldnames[0]
+        con = sqlite3.connect(DB_FILE)
+        res = con.execute((f"SELECT {pk_col} FROM {self.table_name}"))
+        all = res.fetchall()
+        con.close()
+        return tuple(a[0] for a in all)
+
+    def __len__(self) -> int:
+        """
+        Return the number of rows in the table
+        """
+        con = sqlite3.connect(DB_FILE)
+        res = con.execute(f"SELECT count() FROM {self.table_name}")
+        n = res.fetchone()[0]
+        assert isinstance(n, int)
+        return n
+
+    # TODO: another type variable for key?
+    def __getitem__(self, key: Any) -> TR:
+        """
+        Return row with primary key of key
+        """
+        con = sqlite3.connect(DB_FILE, detect_types=sqlite3.PARSE_DECLTYPES)
+        res = con.execute(f"SELECT * FROM {self.table_name} WHERE {self.fieldnames[0]} = ?", (key,))
+        row = self.row_type(*res.fetchone())
+        row.set_parent_table(self)
+        con.close()
+        return row
+
+    def __iter__(self) -> Iterator[TR]:
+        """
+        Iterate over the table rows
+        """
+        con = sqlite3.connect(DB_FILE, detect_types=sqlite3.PARSE_DECLTYPES)
+        res = con.execute(f"SELECT * FROM {self.table_name}")
+        for r in res:
+            row = self.row_type(*r)
+            row.set_parent_table(self)
+            yield row
 
 
 # TODO: Add role for monthly manager chore
@@ -179,51 +214,49 @@ class UserRole(enum.Flag):
     MANAGER = enum.auto()
     RESIDENT = enum.auto()
     CHOREDOER = enum.auto()
+    MANAGER_CHOREDOER = enum.auto()
+
+    def adapt(self) -> int:
+        return self.value
+
+    @classmethod
+    def convert(cls, s: bytes) -> Self:
+        return cls(int(s))
 
 
-# TODO: remove name and make id the primary key
+sqlite3.register_adapter(UserRole, UserRole.adapt)
+sqlite3.register_converter("UserRole", UserRole.convert)
+
+
 @dataclass(slots=True)
 class User(TableRow):
     """
-    A User has a name, slack_id, and roles
+    A user has a slack_id, name, and roles
     """
 
+    id: str = ""
     name: str = ""
-    slack_id: str = ""
     roles: UserRole = UserRole(0)
 
-    @classmethod
-    def from_dict(cls, member_dict: dict[str, str]) -> Self:
-        name = member_dict["name"]
-        slack_id = member_dict["slack_id"]
-        roles_text = member_dict["roles"]
-        roles = UserRole(0)
-        for r in roles_text.split("|"):
-            if r == "" or r.isspace():
-                continue
-            try:
-                roles |= UserRole[r.upper()]
-            except KeyError:
-                logger.error(f"Invalid role in user file: {r}")
-                continue
-
-        return cls(name=name, slack_id=slack_id, roles=roles)
-
-    def as_dict(self) -> dict[str, str]:
-        d = {k.name: getattr(self, k.name) for k in fields(self)}
-        role_text = "|".join(r.name for r in self.roles if r.name is not None)
-        d["roles"] = role_text
-
-        return d
+    # @classmethod
+    # def from_dict(cls, member_dict: dict[str, str | int]) -> Self:
+    #     return cls(id='123', name='test', roles=UserRole(1))
+    #     pass
+    #
+    # def as_dict(self) -> dict[str, str | int]:
+    #     d: dict[str, str | int] = {'foo': 'bar', 'baz': 1}
+    #     return d
 
 
 class UserTable(PersistentTable[User]):
     """
-    A persistent table of users
+    An interface to the user table database
     """
 
-    def __init__(self, filename: str | Path, create_new: bool = False):
-        super().__init__(filename, User, create_new)
+    TABLE_NAME = 'Users'
+
+    def __init__(self, truncate: bool = False):
+        super().__init__(self.TABLE_NAME, User, truncate)
         self.update_from_slack()
 
     def update_from_slack(self) -> None:
@@ -236,7 +269,7 @@ class UserTable(PersistentTable[User]):
         except ValueError:
             logger.error("Error retrieving slack user list!")
 
-        local_users = tuple(u.slack_id for u in self)
+        local_users = self.keys()
         for m in members:
             # ignore users that are deleted, bots, or already in table
             deleted = m["deleted"]
@@ -247,67 +280,36 @@ class UserTable(PersistentTable[User]):
             # add to table
             # Sometimes names don't exist
             real_name = m.get("real_name", m["profile"].get("real_name", m.get("name", "NoName")))
-            if real_name in tuple(u.name for u in self):
-                logger.warning(f"User {real_name} already exists with different UID!")
-                continue
+            # if real_name in tuple(u.name for u in self):
+            #     logger.warning(f"User {real_name} already exists with different UID!")
+            #     continue
             # Default to resident and choredoer
             self.append(
-                User(name=real_name, slack_id=uid, roles=UserRole.RESIDENT | UserRole.CHOREDOER)
+                User(id=uid, name=real_name, roles=UserRole.RESIDENT | UserRole.CHOREDOER)
             )
-
-    # TODO: create hash table at init
-    def get_user_by_name(self, name: str) -> User:
-        for u in self:
-            if u.name == name:
-                return u
-        raise ValueError
-
-        # self.append(User())
-
-    def get_user_by_slack_id(self, id: str) -> User:
-        for u in self:
-            if u.slack_id == id:
-                return u
-        raise ValueError
 
 
 @dataclass(slots=True)
 class KitchenAssignment(TableRow):
     """
-    A KitchenAssignment has a name, date, and swap_date
+    A KitchenAssignment has a slack id, date, and swap_date
     """
 
-    name: str
+    id: str
     date: int
     swap_date: Optional[datetime.date]
 
-    @classmethod
-    def from_dict(cls, member_dict: dict[str, str]) -> Self:
-        name = member_dict["name"]
-        date = int(member_dict["date"])
-        swap_text = member_dict["swap_date"]
-        if swap_text == "":
-            swap_date = None
-        else:
-            try:
-                swap_dt = datetime.datetime.strptime(member_dict["swap_date"], "%Y/%m/%d")
-                swap_date = datetime.date(swap_dt.year, swap_dt.month, swap_dt.day)
-            except ValueError:
-                logger.error(
-                    f"Could not parse swap date {swap_text} in kitchen assignment for {name}"
-                )
-                swap_date = None
-        return cls(name=name, date=date, swap_date=swap_date)
 
-    def as_dict(self) -> dict[str, str]:
-        d = {k.name: getattr(self, k.name) for k in fields(self)}
-        d["date"] = str(self.date)
-        if self.swap_date is None:
-            d["swap_date"] = ""
-        else:
-            d["swap_date"] = self.swap_date.strftime("%Y/%m/%d")
+def datetime_adapt(d: datetime.date) -> str:
+    return d.isoformat()
 
-        return d
+
+def datetime_convert(val: bytes) -> datetime.date:
+    return datetime.date.fromisoformat(val.decode())
+
+
+sqlite3.register_adapter(datetime.date, datetime_adapt)
+sqlite3.register_converter('date', datetime_convert)
 
 
 class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
@@ -315,10 +317,10 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
     A persistent table storing kitchen cleaning dates
     """
 
-    def __init__(self, filename: str | Path, create_new: bool = False):
-        super().__init__(filename, KitchenAssignment, create_new)
-        # Ensure sorted
-        self.items.sort(key=lambda i: i.date)
+    TABLE_NAME = 'KitchenAssignment'
+
+    def __init__(self, truncate: bool = False):
+        super().__init__(self.TABLE_NAME, KitchenAssignment, truncate)
 
     def get_assignment_by_date(self, date: int) -> Optional[KitchenAssignment]:
         # target date this month
@@ -336,211 +338,76 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
         # No kitchen cleaner today
         return None
 
-class ChoreCompletionFlag(enum.Flag):
-    COMPLETE_ON_TIME = enum.auto()
-    LATE_PENDING = enum.auto()
-    COMPLETE_LATE = enum.auto()
-    DID_NOT_COMPLETE = enum.auto()
-    MANUALLY_CORRECTED = enum.auto()
-    OUT_OF_HOUSE = enum.auto()
-
-class ChoreCompletion(TableRow):
-    """
-    Chore completion by person for a specific week
-    """
-
-    # TODO: date
-    date: datetime.date
-    # Mapping of names to completion flag
-    completion: dict[str, ChoreCompletionFlag]
-
-    def __init__(self, date: datetime.date, comp_dict: dict[str, ChoreCompletionFlag]):
-        self.date = date
-        self.completion = comp_dict
-
-    def __getitem__(self, key: str) -> ChoreCompletionFlag:
-        return self.completion[key]
-
-    def __setitem__(self, key: str, value: ChoreCompletionFlag) -> None:
-        with self.get_lock():
-            self.completion[key] = value
-            self.sync()
-
-    def names(self) -> list[str]:
-        return list(self.completion.keys())
-
-    @classmethod
-    def from_dict(cls, member_dict: dict[str, str]) -> Self:
-        """
-        Convert from a dict maping names and text representation of flags to
-        mapping names to the actual flag type
-        """
-        new_dict: dict[str, ChoreCompletionFlag] = dict()
-        for column, value in member_dict.items():
-            # Check for special date column
-            if column == "date":
-                try:
-                    dt = datetime.datetime.strptime(value, "%Y/%m/%d")
-                    date = datetime.date(dt.year, dt.month, dt.day)
-                except ValueError:
-                    logger.error(f"Could not parse date {dt} in chore completion table")
-                    date = datetime.date(1990, 1, 1)
-                continue
-
-            flag = ChoreCompletionFlag(0)
-            # for each flag in the text
-            for f in value.split("|"):
-                if f == "" or f.isspace():
-                    continue
-                try:
-                    flag |= ChoreCompletionFlag[f.upper()]
-                except KeyError:
-                    logger.error(f"Invalid flag in completion file: {f}")
-                    continue
-            # Put name, flag in new dict
-            new_dict[column] = flag
-
-        return cls(date, new_dict)
-
-    def as_dict(self) -> dict[str, str]:
-        """
-        Return dict mapping names to text representation of flags
-        """
-        d: dict[str, str] = dict()
-
-        d["date"] = self.date.strftime("%Y/%m/%d")
-
-        # Loop through dict and convert to strings
-        for name, flag in self.completion.items():
-            role_text = "|".join(f.name for f in flag if f.name is not None)
-            d[name] = role_text
-
-        return d
-
-
-class ChoreCompletionTable(PersistentTable[ChoreCompletion]):
-    """
-    A table to record chore completion
-    """
-
-    names: list[str] = list()
-
-    def __init__(self, filename: str | Path, names: list[str], create_new: bool = False):
-        super().__init__(filename, ChoreCompletion, create_new)
-        
-        # populate cur_names with names loaded from csv if any
-        try:
-            cur_names = self[0].names()
-        except (KeyError, IndexError):
-            cur_names = []
-
-        self._ensure_names(cur_names, names)
-
-    def _ensure_names(self, cur_names: list[str], all_names: list[str]) -> None:
-        """
-        Add names to table if they do not exist
-        """
-        new_names = [n for n in all_names if n not in cur_names]
-        self.names = cur_names + new_names
-        for n in new_names:
-            for row in self:
-                # Set in row member dict directly to avoid multiple syncs
-                # We are in __init__ no need to lock
-                row.completion[n] = ChoreCompletionFlag(0)
-        if new_names:
-            self.fieldnames = self.names + ["date"]
-            self.sync()
-
-        self.names = cur_names + new_names
-
-
-# TODO: These are run before logging is set up in main
-# user_table = UserTable(SLACK_USER_FILE)
-# kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
 
 _user_table: UserTable | None = None
 _kitchen_assignment_table: KitchenAssignmentTable | None = None
-_chore_completion_table: ChoreCompletionTable | None = None
+
 
 def init_storage() -> None:
     global _user_table
     global _kitchen_assignment_table
-    global _chore_completion_table
+    # global _chore_completion_table
 
-    _user_table = UserTable(SLACK_USER_FILE)
-    names = [u.name for u in _user_table]
-    _kitchen_assignment_table = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
-    _chore_completion_table = ChoreCompletionTable(CHORE_COMP_FILE, names)
+    _user_table = UserTable()
+    _kitchen_assignment_table = KitchenAssignmentTable()
+
 
 def get_user_table() -> UserTable:
     if not _user_table:
         raise ValueError("Storage not initialized!")
     return _user_table
 
+
 def get_kitchen_assignment_table() -> KitchenAssignmentTable:
     if not _kitchen_assignment_table:
         raise ValueError("Storage not initialized!")
     return _kitchen_assignment_table
 
-def get_chore_completion_table() -> ChoreCompletionTable:
-    if not _chore_completion_table:
-        raise ValueError("Storage not initialized!")
-    return _chore_completion_table
-                         
-# TODO rewrite tests to call init_storage classes first
+
 def test() -> None:
-    # Make a user table
-    t = UserTable("test.csv", create_new=True)
-    t.append(User("Dave", "abc123", UserRole.MANAGER))
-    t.append(User("Barb", "545454", UserRole.RESIDENT | UserRole.CHOREDOER))
+    # Add some users
+    ut = UserTable(truncate=True)
+    u1 = User(id='123', name='user1', roles=(UserRole.ADMIN | UserRole.RESIDENT))
+    ut.append(u1)
+    u2 = User(id='345', name='user2', roles=(UserRole.MANAGER | UserRole.CHOREDOER))
+    ut.append(u2)
+    u3 = User(id='678', name='user3', roles=(UserRole.RESIDENT))
+    ut.append(u3)
 
-    # Make a new table with file
-    t2 = UserTable("test.csv")
-    for r in t2:
-        print(r)
-    # Modify table
-    u = t2[0]
-    u.slack_id = "xyz456"
-    t2[1].roles |= UserRole.ADMIN
+    print('Number of rows', len(ut))
+    print(ut.keys())
 
-    # Make a third table and read back
-    t3 = UserTable("test.csv")
-    print()
-    for r in t3:
-        print(r)
+    # print the table
+    con = sqlite3.connect(DB_FILE)
+    res = con.execute(f'SELECT * FROM {ut.table_name}')
+    print(res.fetchall())
+    con.close()
 
+    # try changing some users
+    u2.name = 'user2 new'
+    u3.roles |= UserRole.MANAGER
 
-def test2() -> None:
-    # Test Kitchen assignent table
-    k = KitchenAssignmentTable(KITCHEN_ASSIGNMENT_FILE)
-    print(k)
-    for kr in k:
-        print(kr)
+    # print again
+    con = sqlite3.connect(DB_FILE)
+    res = con.execute(f'SELECT * FROM {ut.table_name}')
+    print(res.fetchall())
+    con.close()
 
+    # Get user by id
+    u345 = ut['345']
+    print(u345)
 
-def test3() -> None:
-    names = ["foo", "bar", "baz"]
+    # change something
+    u345.name = "new again"
 
-    chore_completion_table = ChoreCompletionTable(
-        CHORE_COMP_FILE, names, create_new=True)
-
-    row1 = ChoreCompletion(datetime.date(1999, 2, 3), 
-        {"foo": ChoreCompletionFlag(2), "bar": ChoreCompletionFlag(1)})
-
-    chore_completion_table.append(row1)
-
-    n2 = ["foo", "baz", "boo"]
-    cct2 = ChoreCompletionTable(CHORE_COMP_FILE, n2)
-    row2 = ChoreCompletion(
-        datetime.date(2001, 4, 4),
-       {"foo": ChoreCompletionFlag.COMPLETE_LATE 
-            | ChoreCompletionFlag.MANUALLY_CORRECTED, 
-        "boo": ChoreCompletionFlag.DID_NOT_COMPLETE})
-    cct2.append(row2)
+    # print again
+    con = sqlite3.connect(DB_FILE)
+    res = con.execute(f'SELECT * FROM {ut.table_name}')
+    print(res.fetchall())
+    con.close()
 
 
-    print("created csvs")
-
-
-if __name__ == "__main__":
-    test3()
+if __name__ == '__main__':
+    DB_FILE_NAME = "test.db"
+    DB_FILE = (Path(__file__).parent / ("../data/" + DB_FILE_NAME)).resolve()
+    test()
