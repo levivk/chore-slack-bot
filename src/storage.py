@@ -296,8 +296,8 @@ class KitchenAssignment(TableRow):
     """
 
     id: str
-    date: int
-    swap_date: Optional[datetime.date]
+    date: Optional[int] = None
+    swap_date: Optional[datetime.date] = None
 
 
 def datetime_adapt(d: datetime.date) -> str:
@@ -319,8 +319,21 @@ class KitchenAssignmentTable(PersistentTable[KitchenAssignment]):
 
     TABLE_NAME = 'KitchenAssignment'
 
-    def __init__(self, truncate: bool = False):
+    def __init__(self, slack_ids: tuple[str], truncate: bool = False):
         super().__init__(self.TABLE_NAME, KitchenAssignment, truncate)
+        self.ensure_ids(slack_ids)
+
+    def ensure_ids(self, slack_ids: tuple[str]) -> None:
+        """
+        Ensure all IDs are in table
+        """
+        current_ids = self.keys()
+        new_ids = [id for id in slack_ids if id not in current_ids]
+
+        # Add new to table
+        for id in new_ids:
+            row = KitchenAssignment(id=id)
+            self.append(row)
 
     def get_assignment_by_date(self, date: int) -> Optional[KitchenAssignment]:
         # target date this month
@@ -349,17 +362,17 @@ def init_storage() -> None:
     # global _chore_completion_table
 
     _user_table = UserTable()
-    _kitchen_assignment_table = KitchenAssignmentTable()
+    _kitchen_assignment_table = KitchenAssignmentTable(_user_table.keys())
 
 
 def get_user_table() -> UserTable:
-    if not _user_table:
+    if _user_table is None:
         raise ValueError("Storage not initialized!")
     return _user_table
 
 
 def get_kitchen_assignment_table() -> KitchenAssignmentTable:
-    if not _kitchen_assignment_table:
+    if _kitchen_assignment_table is None:
         raise ValueError("Storage not initialized!")
     return _kitchen_assignment_table
 
