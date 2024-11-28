@@ -1,0 +1,40 @@
+{
+	"type": "home",
+	"blocks": [
+		{
+			"type": "section",
+			"text": {
+				"type": "mrkdwn",
+				"text": "Hello, ${name}!"
+			}
+		},
+		{
+			"type": "divider"
+		},
+		{
+			"type": "actions",
+			"elements": [
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Roles",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "admin_home_roles"
+				},
+				{
+					"type": "button",
+					"text": {
+						"type": "plain_text",
+						"text": "Kitchen Assignments",
+						"emoji": true
+					},
+					"value": "click_me_123",
+					"action_id": "admin_home_ka"
+				}
+			]
+		}
+	]
+}

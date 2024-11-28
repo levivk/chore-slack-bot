@@ -1,14 +1,15 @@
 import config
 from vision import PhotoProcessor
 import storage as st
+import slack_home as sh
 from im_util import handle_command
 from slack_bolt import App
 from slack_bolt.context.say.say import Say
 from slack_sdk import WebClient
-from slack_sdk.errors import SlackApiError
 from typing import Dict, Any, cast
 import requests
 import logging
+import re
 
 _logger = logging.getLogger(__name__)
 
@@ -110,39 +111,11 @@ def handle_im_picture(url: str, say: Say) -> None:
     #   issue action, or not
 
 
-def handle_home_opened(client: WebClient, event: Dict[str, Any]) -> None:
-
-    user_id = event["user"]
-    _logger.info(f"home opened by user {user_id}")
-
-    try:
-        result = client.views_publish(
-            user_id=user_id,
-            view={
-                "type": "home",
-                "callback_id": "home_view",
-                "blocks": [
-                    {
-                        "type": "section",
-                        "text": {
-                            "type": "mrkdwn",
-                            "text": "This is a test again :smile: :smile:"
-                        }
-                    }
-                ]
-            }
-        )
-
-        if result["ok"] is not True:
-            _logger.error(f"views_publish: {result}")
-
-    except SlackApiError as e:
-        _logger.error(f"Error publishing home tab for user {event['user']}: {e}")
-
-
 def start_server() -> None:
 
     app = App(token=config.get_slack_bot_token(), signing_secret=config.get_slack_signing_secret())
     app.event({"type": "message"})(handle_message)
-    app.event({"type": "app_home_opened"})(handle_home_opened)
+    app.event({"type": "app_home_opened"})(sh.handle_home_opened)
+    app.block_action(re.compile(".*"))(sh.handle_block_action)
+    # app.action('admin-home-roles')(sh.act_admin_home_roles)
     app.start(port=3000)
