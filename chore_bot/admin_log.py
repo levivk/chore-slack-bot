@@ -1,6 +1,6 @@
 
-import storage as st
-import config
+from . import storage as st
+from . import config
 from slack_sdk import WebClient
 import logging
 

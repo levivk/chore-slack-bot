@@ -1,7 +1,7 @@
-from reminder import reminder_thread
-from slack_receive import start_server
-from storage import init_storage
-from admin_log import AdminLogHandler
+from chore_bot.reminder import reminder_thread
+from chore_bot.slack_receive import start_server
+from chore_bot.storage import init_storage
+from chore_bot.admin_log import AdminLogHandler
 import logging
 import signal
 from threading import Thread

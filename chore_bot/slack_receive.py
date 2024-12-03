@@ -1,8 +1,8 @@
-import config
-from vision import PhotoProcessor
-import storage as st
-import slack_home as sh
-from im_util import handle_command
+from . import config
+from .vision import PhotoProcessor
+from . import storage as st
+from .home_tab import handle as hh
+from . import im_util
 from slack_bolt import App
 from slack_bolt.context.say.say import Say
 from slack_sdk import WebClient
@@ -37,7 +37,7 @@ def handle_im(message: Dict[str, Any], say: Say, client: WebClient) -> None:
     user = st.get_user_table()[slack_id]
     if st.UserRole.ADMIN in user.roles:
         # This is admin, pass to command processor
-        handle_command(message['text'], say)
+        im_util.handle_command(message['text'], say)
     else:
         # give a cortial response
         say("Hello!!")
@@ -115,7 +115,7 @@ def start_server() -> None:
 
     app = App(token=config.get_slack_bot_token(), signing_secret=config.get_slack_signing_secret())
     app.event({"type": "message"})(handle_message)
-    app.event({"type": "app_home_opened"})(sh.handle_home_opened)
-    app.block_action(re.compile(".*"))(sh.handle_block_action)
+    app.event({"type": "app_home_opened"})(hh.handle_home_opened)
+    app.block_action(re.compile(".*"))(hh.handle_block_action)
     # app.action('admin-home-roles')(sh.act_admin_home_roles)
     app.start(port=3000)

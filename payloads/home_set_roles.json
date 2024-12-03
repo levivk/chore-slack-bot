@@ -1,0 +1,25 @@
+{
+	"type": "home",
+	"blocks": [
+		{
+			"type": "section",
+			"text": {
+				"type": "mrkdwn",
+				"text": "Test block with multi static select"
+			},
+			"accessory": {
+				"type": "multi_static_select",
+				"placeholder": {
+					"type": "plain_text",
+					"text": "Select options",
+					"emoji": true
+				},
+				"options": [
+				],
+				"initial_options": [
+				],
+				"action_id": "action-set-roles"
+			}
+		}
+	]
+}

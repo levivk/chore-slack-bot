@@ -1,5 +1,5 @@
 
-import config
+from . import config
 from slack_sdk import WebClient
 import sqlite3
 import enum
@@ -214,7 +214,7 @@ class UserRole(enum.Flag):
     MANAGER = enum.auto()
     RESIDENT = enum.auto()
     CHOREDOER = enum.auto()
-    MANAGER_CHOREDOER = enum.auto()
+    MONTHLY_CHOREDOER = enum.auto()
 
     def adapt(self) -> int:
         return self.value

@@ -22,7 +22,7 @@
 						"emoji": true
 					},
 					"value": "click_me_123",
-					"action_id": "admin_home_roles"
+					"action_id": "home_set_roles"
 				},
 				{
 					"type": "button",
@@ -32,7 +32,7 @@
 						"emoji": true
 					},
 					"value": "click_me_123",
-					"action_id": "admin_home_ka"
+					"action_id": "home_set_kitchen_assignments"
 				}
 			]
 		}

@@ -1,0 +1,8 @@
+{
+	"text": {
+		"type": "plain_text",
+		"text": "$role",
+		"emoji": true
+	},
+	"value": "$role"
+}

@@ -1,6 +1,6 @@
 
-import slack_send as ss
-from storage import get_user_table
+from . import slack_send as ss
+from .storage import get_user_table
 from slack_bolt.context.say.say import Say
 from typing import Callable
 

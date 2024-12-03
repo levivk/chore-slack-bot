@@ -1,4 +1,4 @@
-import config
+from . import config
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 from typing import Any

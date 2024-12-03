@@ -1,6 +1,6 @@
 # import os
-import storage as st
-import slack_send as ss
+from . import storage as st
+from . import slack_send as ss
 import datetime
 import schedule
 import time
