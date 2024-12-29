@@ -35,7 +35,7 @@ def handle_im(message: Dict[str, Any], say: Say, client: WebClient) -> None:
     # No file, is admin?
     slack_id = message['user']
     user = st.get_user_table()[slack_id]
-    if st.UserRole.ADMIN in user.roles:
+    if st.UserRole.DEVELOPER in user.roles:
         # This is admin, pass to command processor
         im_util.handle_command(message['text'], say)
     else:

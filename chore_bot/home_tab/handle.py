@@ -21,7 +21,7 @@ def handle_home_opened(client: WebClient, event: Dict[str, Any]) -> None:
     # _logger.info(f"home opened by user {user_id}")
 
     ut = st.get_user_table()
-    if st.UserRole.ADMIN in ut[user_id].roles:
+    if st.UserRole.DEVELOPER in ut[user_id].roles:
         home_admin(client, event)
         return
 

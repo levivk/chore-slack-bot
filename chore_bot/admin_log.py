@@ -15,7 +15,7 @@ class AdminLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         ut = st.get_user_table()
-        admins = tuple(u for u in ut if st.UserRole.ADMIN in u.roles)
+        admins = tuple(u for u in ut if st.UserRole.DEVELOPER in u.roles)
         for a in admins:
             try:
                 self.wc.chat_postMessage(channel=a.id, text=self.format(record))

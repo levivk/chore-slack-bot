@@ -210,11 +210,14 @@ class PersistentTable[TR: TableRow]:
 
 # TODO: Add role for monthly manager chore
 class UserRole(enum.Flag):
-    ADMIN = enum.auto()
+    DEVELOPER = enum.auto()
     MANAGER = enum.auto()
     RESIDENT = enum.auto()
     CHOREDOER = enum.auto()
     MONTHLY_CHOREDOER = enum.auto()
+    CHOREDINATOR = enum.auto()
+    ALUMNI = enum.auto()
+    KPA_ADMIN = enum.auto()
 
     def adapt(self) -> int:
         return self.value
@@ -380,7 +383,7 @@ def get_kitchen_assignment_table() -> KitchenAssignmentTable:
 def test() -> None:
     # Add some users
     ut = UserTable(truncate=True)
-    u1 = User(id='123', name='user1', roles=(UserRole.ADMIN | UserRole.RESIDENT))
+    u1 = User(id='123', name='user1', roles=(UserRole.DEVELOPER | UserRole.RESIDENT))
     ut.append(u1)
     u2 = User(id='345', name='user2', roles=(UserRole.MANAGER | UserRole.CHOREDOER))
     ut.append(u2)
